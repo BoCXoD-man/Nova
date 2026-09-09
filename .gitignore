@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Virtualenv
+.env
+env/
+venv/
+.venv/
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Allure
+allure-results/
+
+
+# pytest cache
+.pytest_cache/
+.cache/
+
+# Logs and temp
+/logs/
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# System files
+Thumbs.db
+desktop.ini
+
+# Test artifacts (screenshots, videos, etc.)
+screenshots/
+output/
+reports/
+
+# Дополнительно
+.coverage
+.coverage.*
