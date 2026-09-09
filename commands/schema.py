@@ -2,7 +2,8 @@
 Модуль: commands/schema.py
 
 Содержит правила и функции валидации структурированных ответов Butler.
-Проверяет команды, параметры, результат, инструкцию Responder и решение по памяти.
+Проверяет команды, параметры, результат, инструкцию Responder и решение
+по долговременной памяти пользователя или связанных людей.
 """
 
 from typing import Any
@@ -18,6 +19,11 @@ ALLOWED_MEMORY_ACTIONS = {
     "remember",
     "forget",
     "ignore",
+}
+
+ALLOWED_MEMORY_SUBJECT_TYPES = {
+    "user",
+    "person",
 }
 
 
@@ -129,6 +135,9 @@ def _validate_memory(memory: Any) -> None:
 
     required_fields = {
         "action",
+        "subject_type",
+        "subject_name",
+        "subject_relation",
         "category",
         "key",
         "value",
@@ -144,16 +153,40 @@ def _validate_memory(memory: Any) -> None:
         )
 
     action = memory["action"]
+    subject_type = memory["subject_type"]
+    subject_name = memory["subject_name"]
+    subject_relation = memory["subject_relation"]
+    category = memory["category"]
+    key = memory["key"]
+    value = memory["value"]
+    confidence = memory["confidence"]
 
     if action not in ALLOWED_MEMORY_ACTIONS:
         raise ValueError(
             f"Неизвестное действие памяти: {action}"
         )
 
-    category = memory["category"]
-    key = memory["key"]
-    value = memory["value"]
-    confidence = memory["confidence"]
+    if subject_type not in ALLOWED_MEMORY_SUBJECT_TYPES:
+        raise ValueError(
+            "memory.subject_type должен быть "
+            "'user' или 'person'."
+        )
+
+    if subject_name is not None and not isinstance(
+        subject_name,
+        str,
+    ):
+        raise ValueError(
+            "memory.subject_name должен быть строкой или null."
+        )
+
+    if subject_relation is not None and not isinstance(
+        subject_relation,
+        str,
+    ):
+        raise ValueError(
+            "memory.subject_relation должен быть строкой или null."
+        )
 
     if category is not None and not isinstance(
         category,
@@ -210,3 +243,13 @@ def _validate_memory(memory: Any) -> None:
             "Для memory.action='remember' "
             "требуется value."
         )
+
+    if action in {
+        "remember",
+        "forget",
+    } and subject_type == "person":
+        if subject_name is None and subject_relation is None:
+            raise ValueError(
+                "Для памяти связанного человека требуется "
+                "subject_name или subject_relation."
+            )

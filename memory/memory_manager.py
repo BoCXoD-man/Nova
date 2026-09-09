@@ -2,7 +2,7 @@
 Модуль: memory/memory_manager.py
 
 Управляет долговременной памятью пользователя через SQLAlchemy.
-Применяет уже принятое решение памяти и не принимает решений
+Применяет уже принятое решение памяти и не принимает решения
 о сохранении информации самостоятельно.
 """
 
@@ -32,7 +32,7 @@ FACT_TYPES = {
     "favorite_movie": FACT_TYPE_SINGLE,
     "favorite_music": FACT_TYPE_SINGLE,
     "favorite_book": FACT_TYPE_SINGLE,
-
+    "favorite_food": FACT_TYPE_SINGLE,
     "hobby": FACT_TYPE_MULTI,
     "interest": FACT_TYPE_MULTI,
 
@@ -180,6 +180,7 @@ class MemoryManager:
     ) -> UserFact:
         """
         Сохраняет факт пользователя в долговременной памяти.
+
         Для single и temporal фактов предыдущая активная запись закрывается.
         """
         self._validate_confidence(
@@ -387,13 +388,46 @@ class MemoryManager:
     ):
         """
         Применяет решение Butler к долговременной памяти.
-        Все реальные изменения базы выполняются только здесь.
+
+        В зависимости от subject_type изменяет память пользователя
+        или память связанного человека.
         """
         action = memory["action"]
 
         if action == "ignore":
             return None
 
+        subject_type = memory.get(
+            "subject_type",
+            "user",
+        )
+
+        if subject_type == "user":
+            return self._apply_user_memory_decision(
+                user_id=user_id,
+                memory=memory,
+                source=source,
+            )
+
+        if subject_type == "person":
+            return self._apply_person_memory_decision(
+                user_id=user_id,
+                memory=memory,
+                source=source,
+            )
+
+        raise ValueError(
+            f"Неизвестный subject_type: {subject_type}"
+        )
+
+    def _apply_user_memory_decision(
+        self,
+        user_id: int,
+        memory: dict,
+        source: str,
+    ):
+        """Применяет решение памяти, относящееся к пользователю."""
+        action = memory["action"]
         category = memory["category"]
         key = memory["key"]
 
@@ -435,6 +469,80 @@ class MemoryManager:
                 return None
 
             self.forget_fact(
+                fact.id
+            )
+
+            return fact
+
+        raise ValueError(
+            f"Неизвестное действие памяти: {action}"
+        )
+
+    def _apply_person_memory_decision(
+        self,
+        user_id: int,
+        memory: dict,
+        source: str,
+    ):
+        """Применяет решение памяти, относящееся к связанному человеку."""
+        action = memory["action"]
+        category = memory["category"]
+        key = memory["key"]
+
+        if category is None:
+            raise ValueError(
+                "Для решения памяти требуется category."
+            )
+
+        if key is None:
+            raise ValueError(
+                "Для решения памяти требуется key."
+            )
+
+        person = self._resolve_related_person(
+            user_id=user_id,
+            subject_name=memory.get(
+                "subject_name"
+            ),
+            subject_relation=memory.get(
+                "subject_relation"
+            ),
+        )
+
+        if person is None:
+            raise ValueError(
+                "Не удалось определить связанного человека "
+                "для решения памяти."
+            )
+
+        if action == "remember":
+            value = memory["value"]
+
+            if value is None:
+                raise ValueError(
+                    "Для remember требуется value."
+                )
+
+            return self.remember_person_fact(
+                related_person_id=person.id,
+                category=category,
+                key=key,
+                value=value,
+                source=source,
+                confidence=memory["confidence"],
+            )
+
+        if action == "forget":
+            fact = self.get_person_fact(
+                related_person_id=person.id,
+                category=category,
+                key=key,
+            )
+
+            if fact is None:
+                return None
+
+            self.forget_person_fact(
                 fact.id
             )
 
@@ -591,6 +699,7 @@ class MemoryManager:
     ) -> PersonFact:
         """
         Сохраняет факт о связанном человеке.
+
         Для single и temporal фактов предыдущая активная запись закрывается.
         """
         self._validate_confidence(
@@ -720,9 +829,91 @@ class MemoryManager:
             )
         )
 
+    def forget_person_fact(
+        self,
+        fact_id: int,
+    ):
+        """Полностью удаляет факт связанного человека из базы данных."""
+        fact = self.session.get(
+            PersonFact,
+            fact_id,
+        )
+
+        if fact is None:
+            return
+
+        self.session.delete(
+            fact
+        )
+        self.session.commit()
+
     # ==========================================================
     # INTERNAL
     # ==========================================================
+
+    def _resolve_related_person(
+        self,
+        user_id: int,
+        subject_name: Optional[str],
+        subject_relation: Optional[str],
+    ) -> Optional[RelatedPerson]:
+        """
+        Определяет связанного человека по имени или отношению.
+
+        Если по отношению найдено несколько людей, метод не выбирает
+        человека случайно и возвращает None.
+        """
+        people = self.get_people(
+            user_id
+        )
+
+        if subject_name:
+            normalized_name = subject_name.strip().lower()
+
+            for person in people:
+                names = {
+                    person.name.strip().lower(),
+                }
+
+                if person.preferred_name:
+                    names.add(
+                        person.preferred_name.strip().lower()
+                    )
+
+                if normalized_name in names:
+                    return person
+
+        if subject_relation:
+            relations = self.get_relations(
+                user_id
+            )
+
+            matches = []
+
+            normalized_relation = (
+                subject_relation.strip().lower()
+            )
+
+            for relation in relations:
+                if (
+                    relation.relation_type.strip().lower()
+                    != normalized_relation
+                ):
+                    continue
+
+                person = self.get_person(
+                    relation.related_person_id
+                )
+
+                if person is not None:
+                    matches.append(
+                        person
+                    )
+
+            if len(matches) == 1:
+                return matches[0]
+
+        return None
 
     def _get_fact_type(
         self,

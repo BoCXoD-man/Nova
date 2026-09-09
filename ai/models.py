@@ -68,6 +68,25 @@ BUTLER_SCHEMA = {
                             "ignore",
                         ],
                     },
+                    "subject_type": {
+                        "type": "string",
+                        "enum": [
+                            "user",
+                            "person",
+                        ],
+                    },
+                    "subject_name": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                    },
+                    "subject_relation": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                    },
                     "category": {
                         "type": [
                             "string",
@@ -92,6 +111,9 @@ BUTLER_SCHEMA = {
                 },
                 "required": [
                     "action",
+                    "subject_type",
+                    "subject_name",
+                    "subject_relation",
                     "category",
                     "key",
                     "value",

@@ -1,3 +1,8 @@
+# БД и тестовые данные 
+memory_data/
+seed_memory.py
+
+
 # Python
 __pycache__/
 *.pyc
