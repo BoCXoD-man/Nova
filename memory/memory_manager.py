@@ -35,11 +35,21 @@ FACT_TYPES = {
     "favorite_food": FACT_TYPE_SINGLE,
     "hobby": FACT_TYPE_MULTI,
     "interest": FACT_TYPE_MULTI,
-
     "current_game": FACT_TYPE_TEMPORAL,
     "current_city": FACT_TYPE_TEMPORAL,
     "current_project": FACT_TYPE_TEMPORAL,
     "current_job": FACT_TYPE_TEMPORAL,
+}
+
+
+PROFILE_FIELDS = {
+    "name",
+    "preferred_name",
+    "language",
+    "country",
+    "city",
+    "timezone",
+    "birth_date",
 }
 
 
@@ -449,6 +459,13 @@ class MemoryManager:
                     "Для remember требуется value."
                 )
 
+            if key in PROFILE_FIELDS:
+                return self._update_user_profile_field(
+                    user_id=user_id,
+                    key=key,
+                    value=value,
+                )
+
             return self.remember_fact(
                 user_id=user_id,
                 category=category,
@@ -459,6 +476,12 @@ class MemoryManager:
             )
 
         if action == "forget":
+            if key in PROFILE_FIELDS:
+                return self._clear_user_profile_field(
+                    user_id=user_id,
+                    key=key,
+                )
+
             fact = self.get_fact(
                 user_id=user_id,
                 category=category,
@@ -850,6 +873,95 @@ class MemoryManager:
     # ==========================================================
     # INTERNAL
     # ==========================================================
+
+    def _update_user_profile_field(
+        self,
+        user_id: int,
+        key: str,
+        value: str,
+    ) -> User:
+        """
+        Обновляет профильное поле пользователя напрямую в таблице User.
+
+        Профильные данные не сохраняются как обычные UserFact,
+        потому что Context Manager читает их непосредственно из User.
+        """
+        if key not in PROFILE_FIELDS:
+            raise ValueError(
+                f"Поле '{key}' не является профильным."
+            )
+
+        if value is None:
+            raise ValueError(
+                "Значение профильного поля не может быть None."
+            )
+
+        value = str(value).strip()
+
+        if not value:
+            raise ValueError(
+                "Значение профильного поля не может быть пустым."
+            )
+
+        user = self.get_user(
+            user_id
+        )
+
+        if user is None:
+            raise ValueError(
+                f"Пользователь с id={user_id} не найден."
+            )
+
+        setattr(
+            user,
+            key,
+            value,
+        )
+
+        self.session.commit()
+        self.session.refresh(user)
+
+        return user
+
+    def _clear_user_profile_field(
+        self,
+        user_id: int,
+        key: str,
+    ) -> Optional[User]:
+        """
+        Очищает профильное поле пользователя.
+
+        Имя пользователя является обязательным и не удаляется.
+        """
+        if key not in PROFILE_FIELDS:
+            raise ValueError(
+                f"Поле '{key}' не является профильным."
+            )
+
+        if key == "name":
+            raise ValueError(
+                "Основное имя пользователя нельзя удалить."
+            )
+
+        user = self.get_user(
+            user_id
+        )
+
+        if user is None:
+            raise ValueError(
+                f"Пользователь с id={user_id} не найден."
+            )
+
+        setattr(
+            user,
+            key,
+            None,
+        )
+
+        self.session.commit()
+        self.session.refresh(user)
+
+        return user
 
     def _resolve_related_person(
         self,
