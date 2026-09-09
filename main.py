@@ -1,7 +1,7 @@
 """
 Модуль: main.py
 
-Главная точка входа голосового ассистента Алиса.
+Главная точка входа голосового ассистента Nova.
 Связывает распознавание речи, Context Manager, Butler, память,
 выполнение команд, Responder и синтез речи в единый цикл.
 """
@@ -9,16 +9,19 @@
 import os
 import time
 
+from sqlalchemy import select
+
 from ai.butler import Butler
 from ai.responder import Responder
 from commands.handler import CommandHandler
+from logger import get_logger
 from memory.context_manager import ContextManager
+from memory.database import get_session
 from memory.database import init_database
 from memory.memory_manager import MemoryManager
+from memory.models import User
 from speech.recognizer import SpeechRecognizer
 from speech.synthesizer import SpeechSynthesizer
-
-from logger import get_logger
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,22 +31,41 @@ log = get_logger("MAIN")
 
 TTS_COOLDOWN = 0.5
 
-# Временный идентификатор пользователя.
-# Позже будет заменён нормальной системой идентификации.
-USER_ID = 2
+
+def get_default_user_id() -> int:
+    """Возвращает ID первого пользователя, сохранённого в базе данных."""
+    with get_session() as session:
+        user = session.scalars(
+            select(User)
+            .order_by(User.id)
+        ).first()
+
+        if user is None:
+            raise RuntimeError(
+                "В базе данных нет пользователей. "
+                "Сначала запусти seed_memory.py."
+            )
+
+        return user.id
 
 
 def main():
     """Запускает голосового ассистента и обрабатывает сообщения пользователя."""
     print("=" * 60)
-    print("             ГОЛОСОВОЙ ПОМОЩНИК")
+    print("                    NOVA")
     print("=" * 60)
 
-    log.info("Запуск голосового помощника")
+    log.info("Запуск голосового помощника Nova")
     log.info("Инициализация компонентов")
 
     init_database()
-    log.info("База данных памяти инициализирована")
+
+    user_id = get_default_user_id()
+
+    log.info(
+        "Используется пользователь с ID: {}",
+        user_id,
+    )
 
     memory_manager = MemoryManager()
     log.info("MemoryManager инициализирован")
@@ -72,7 +94,7 @@ def main():
     print("ГОТОВО")
     print("=" * 60)
 
-    print("\nГовори с Алисой.")
+    print("\nГовори с Nova.")
     print("Для выхода нажми Ctrl+C.\n")
 
     while True:
@@ -89,6 +111,7 @@ def main():
             continue
 
         print(f"\n📝 Ты: {text}")
+
         log.info(
             "Получен текст пользователя: {}",
             text,
@@ -96,7 +119,7 @@ def main():
 
         try:
             context = context_manager.build_context(
-                user_id=USER_ID,
+                user_id=user_id,
                 text=text,
             )
         except Exception:
@@ -148,7 +171,7 @@ def main():
         if memory_decision:
             try:
                 memory_manager.apply_decision(
-                    user_id=USER_ID,
+                    user_id=user_id,
                     memory=memory_decision,
                     source="conversation",
                 )
@@ -172,6 +195,7 @@ def main():
             command_data = handler.execute(
                 command_data,
             )
+
         except Exception:
             log.exception(
                 "Ошибка при выполнении команды",
@@ -198,6 +222,7 @@ def main():
                 data=command_data,
                 context=context,
             )
+
         except Exception:
             log.exception(
                 "Ошибка при формировании ответа Responder",
@@ -219,7 +244,7 @@ def main():
             answer,
         )
 
-        print(f"\n🤖 Алиса: {answer}")
+        print(f"\n🤖 Nova: {answer}")
 
         try:
             synthesizer.speak(answer)

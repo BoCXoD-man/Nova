@@ -2,8 +2,8 @@
 Модуль: memory/context_manager.py
 
 Формирует релевантный контекст пользователя для текущего запроса.
-Определяет, относится ли запрос к самому пользователю или к связанному
-с ним человеку, и извлекает только необходимые данные из памяти.
+Определяет пользователя или связанного человека, о котором идёт речь,
+и передаёт модели соответствующие факты вместе с отношением к пользователю.
 """
 
 from sqlalchemy import select
@@ -27,28 +27,52 @@ class ContextManager:
         "жена": "wife",
         "жену": "wife",
         "жене": "wife",
+        "женой": "wife",
         "муж": "husband",
         "мужа": "husband",
         "мужу": "husband",
+        "мужем": "husband",
         "дочь": "daughter",
         "дочери": "daughter",
-        "дочь": "daughter",
+        "дочерью": "daughter",
+        "дочка": "daughter",
+        "дочку": "daughter",
         "сын": "son",
         "сына": "son",
+        "сыну": "son",
+        "сыном": "son",
         "мама": "mother",
         "маму": "mother",
-        "мат": "mother",
+        "маме": "mother",
+        "матери": "mother",
         "мать": "mother",
         "папа": "father",
         "папу": "father",
+        "папе": "father",
         "отец": "father",
+        "отца": "father",
         "брата": "brother",
         "брат": "brother",
+        "брату": "brother",
         "сестра": "sister",
         "сестру": "sister",
+        "сестре": "sister",
         "друг": "friend",
         "друга": "friend",
+        "другу": "friend",
         "друзья": "friend",
+    }
+
+    RELATION_LABELS = {
+        "wife": "твоя жена",
+        "husband": "твой муж",
+        "daughter": "твоя дочь",
+        "son": "твой сын",
+        "mother": "твоя мама",
+        "father": "твой отец",
+        "brother": "твой брат",
+        "sister": "твоя сестра",
+        "friend": "твой друг",
     }
 
     GAME_KEYWORDS = {
@@ -75,12 +99,20 @@ class ContextManager:
         "называть",
         "меня",
         "кто я",
+        "дата рождения",
+        "день рождения",
+        "родился",
+        "родилась",
+        "рождения",
     }
 
     PERSON_FACT_KEYWORDS = {
         "любит",
+        "люблю",
         "нравится",
         "любим",
+        "любимая",
+        "любимый",
         "предпочитает",
         "хочет",
         "играет",
@@ -88,10 +120,16 @@ class ContextManager:
         "учится",
         "возраст",
         "день рождения",
+        "дата рождения",
+        "рождения",
+        "родился",
+        "родилась",
         "еда",
         "любимая еда",
         "хобби",
         "интерес",
+        "нравится",
+        "когда",
     }
 
     def __init__(self):
@@ -169,6 +207,7 @@ class ContextManager:
             "country": user.country,
             "city": user.city,
             "timezone": user.timezone,
+            "birth_date": user.birth_date,
         }
 
     def _get_relevant_user_facts(
@@ -182,6 +221,7 @@ class ContextManager:
             select(UserFact)
             .where(UserFact.user_id == user_id)
             .where(UserFact.expires_at.is_(None))
+            .order_by(UserFact.updated_at.desc())
         )
 
         facts = result.scalars().all()
@@ -208,7 +248,13 @@ class ContextManager:
             ]
 
         if self._contains_any(text, self.PROFILE_KEYWORDS):
-            return []
+            return [
+                self._serialize_user_fact(fact)
+                for fact in facts
+                if fact.key in {
+                    "birth_date",
+                }
+            ]
 
         return []
 
@@ -218,7 +264,7 @@ class ContextManager:
         user_id: int,
         text: str,
     ) -> dict | None:
-        """Определяет связанного человека и возвращает его релевантные факты."""
+        """Определяет связанного человека и возвращает его факты."""
         people = session.scalars(
             select(RelatedPerson)
             .where(RelatedPerson.user_id == user_id)
@@ -255,6 +301,11 @@ class ContextManager:
         if person is None:
             return None
 
+        relation_type = self._get_person_relation(
+            relations=relations,
+            person_id=person.id,
+        )
+
         person_facts = session.scalars(
             select(PersonFact)
             .where(
@@ -264,23 +315,13 @@ class ContextManager:
             .order_by(PersonFact.updated_at.desc())
         ).all()
 
-        if not self._contains_any(
-            text,
-            self.PERSON_FACT_KEYWORDS,
-        ):
-            person_facts = []
-
-        relation_type = None
-
-        for current_relation, related_person in relations:
-            if related_person.id == person.id:
-                relation_type = current_relation.relation_type
-                break
-
         return {
             "name": person.name,
             "preferred_name": person.preferred_name,
             "relation": relation_type,
+            "relation_label": self._get_relation_label(
+                relation_type,
+            ),
             "facts": [
                 self._serialize_person_fact(fact)
                 for fact in person_facts
@@ -295,12 +336,12 @@ class ContextManager:
         """Ищет связанного человека по имени или предпочитаемому имени."""
         for person in people:
             names = {
-                person.name.lower(),
+                person.name.lower().strip(),
             }
 
             if person.preferred_name:
                 names.add(
-                    person.preferred_name.lower()
+                    person.preferred_name.lower().strip()
                 )
 
             for name in names:
@@ -316,16 +357,41 @@ class ContextManager:
     ) -> tuple[Relation, RelatedPerson] | None:
         """Ищет связанную персону по типу отношения в сообщении."""
         for relation, person in relations:
-            relation_type = relation.relation_type.lower()
+            relation_type = relation.relation_type.lower().strip()
 
             for keyword, mapped_relation in self.RELATION_KEYWORDS.items():
-                if keyword in text and (
-                    relation_type == mapped_relation
-                    or relation_type == keyword
-                ):
+                if keyword not in text:
+                    continue
+
+                if relation_type == mapped_relation:
                     return relation, person
 
         return None
+
+    def _get_person_relation(
+        self,
+        relations: list[tuple[Relation, RelatedPerson]],
+        person_id: int,
+    ) -> str | None:
+        """Возвращает тип отношения пользователя к указанному человеку."""
+        for relation, person in relations:
+            if person.id == person_id:
+                return relation.relation_type
+
+        return None
+
+    def _get_relation_label(
+        self,
+        relation_type: str | None,
+    ) -> str | None:
+        """Возвращает естественное обращение к человеку с позиции пользователя."""
+        if relation_type is None:
+            return None
+
+        return self.RELATION_LABELS.get(
+            relation_type.lower().strip(),
+            relation_type,
+        )
 
     def _get_relevant_relations(
         self,
@@ -334,9 +400,7 @@ class ContextManager:
         text: str,
     ) -> list[dict]:
         """Возвращает отношения, если запрос касается связанных людей."""
-        if not self._contains_relation_reference(
-            text
-        ):
+        if not self._contains_relation_reference(text):
             return []
 
         result = session.execute(
@@ -351,11 +415,16 @@ class ContextManager:
         relations = []
 
         for relation, person in result.all():
+            relation_type = relation.relation_type
+
             relations.append(
                 {
                     "person": person.name,
                     "preferred_name": person.preferred_name,
-                    "relation": relation.relation_type,
+                    "relation": relation_type,
+                    "relation_label": self._get_relation_label(
+                        relation_type,
+                    ),
                     "confidence": relation.confidence,
                 }
             )
@@ -366,7 +435,7 @@ class ContextManager:
         self,
         text: str,
     ) -> bool:
-        """Проверяет, содержит ли запрос упоминание связанного человека."""
+        """Проверяет, содержит ли запрос ссылку на связанного человека."""
         if self._contains_any(
             text,
             set(self.RELATION_KEYWORDS),
@@ -374,13 +443,15 @@ class ContextManager:
             return True
 
         return any(
-            keyword in text
-            for keyword in {
+            word in text
+            for word in {
                 "моя",
                 "мой",
                 "мою",
                 "моего",
                 "моей",
+                "моими",
+                "моих",
             }
         )
 
