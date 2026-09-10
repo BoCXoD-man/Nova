@@ -1,8 +1,12 @@
 import requests
 
 from config import OPENWEATHER_API_KEY
+from tools.registry import register_tool
 
-
+@register_tool(
+    name="weather",
+    description="Получить текущую погоду в указанном городе.",
+)
 def get_weather(location: str) -> str:
     """
     Получает текущую погоду в указанном городе.
