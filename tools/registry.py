@@ -24,7 +24,7 @@ _tools: dict[str, Tool] = {}
 def register_tool(
     name: str,
     description: str,
-):
+    ):
     """Регистрирует функцию как инструмент Nova."""
 
     def decorator(function: Callable[..., Any]):
@@ -39,7 +39,7 @@ def register_tool(
             name=name,
             description=description,
             function=function,
-        )
+            )
 
         return function
 
