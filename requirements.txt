@@ -1,0 +1,10 @@
+openai
+requests
+python-dotenv
+SQLAlchemy
+loguru
+numpy
+sounddevice
+openai-whisper
+torch
+omegaconf

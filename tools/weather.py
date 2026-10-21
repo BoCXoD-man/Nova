@@ -7,12 +7,12 @@ from tools.registry import register_tool
     name="weather",
     description="Получить текущую погоду в указанном городе.",
 )
-def get_weather(location: str) -> str:
+def get_weather(city: str) -> str:
     """
     Получает текущую погоду в указанном городе.
 
     Args:
-        location: Название города.
+        city: Название города.
 
     Returns:
         Информация о текущей погоде.
@@ -23,7 +23,7 @@ def get_weather(location: str) -> str:
     )
 
     params = {
-        "q": location,
+        "q": city,
         "appid": OPENWEATHER_API_KEY,
         "units": "metric",
         "lang": "ru",
@@ -45,7 +45,7 @@ def get_weather(location: str) -> str:
         wind_speed = data["wind"]["speed"]
 
         weather_info = (
-            f"Погода в {location}:\n"
+            f"Погода в {city}:\n"
             f"Описание: {weather_description}\n"
             f"Температура: {temperature:.1f}°C\n"
             f"Влажность: {humidity}%\n"
@@ -56,7 +56,7 @@ def get_weather(location: str) -> str:
 
     return (
         f"Не удалось получить данные о погоде "
-        f"для {location}. "
+        f"для {city}. "
         f"Ошибка: {data.get('message', 'Неизвестная ошибка')}"
     )
 
